@@ -232,7 +232,7 @@ label {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 500px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -295,7 +295,7 @@ label {
 
 .item-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) 44px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 44px;
   gap: 8px;
   align-items: end;
   border: 1px solid var(--line);
@@ -306,6 +306,10 @@ label {
 
 .item-row label {
   font-size: 12px;
+}
+
+.item-row .wide {
+  grid-column: span 2;
 }
 
 .item-row .icon-button {
@@ -357,9 +361,24 @@ label {
 
 .preview-shell {
   max-width: 100%;
-  overflow: auto;
-  padding: 14px;
+  overflow: hidden;
+  padding: 12px;
   background: #e9edf3;
+}
+
+.paper-preview-frame {
+  width: 100%;
+  overflow: hidden;
+}
+
+.paper-preview-scale {
+  width: 794px;
+  transform: scale(var(--preview-scale, 1));
+  transform-origin: top left;
+}
+
+.preview-shell .statement-paper {
+  margin: 0;
 }
 
 .statement-paper {
@@ -445,15 +464,21 @@ label {
 }
 
 .paper-table.with-price-details {
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .paper-table th,
 .paper-table td {
   height: 36px;
   border: 1px solid #111827;
-  padding: 7px 8px;
+  padding: 6px 7px;
   vertical-align: middle;
+}
+
+.paper-table.with-price-details th,
+.paper-table.with-price-details td {
+  height: 33px;
+  padding: 5px 4px;
 }
 
 .paper-table th {
@@ -468,6 +493,13 @@ label {
 
 .paper-table .center {
   text-align: center;
+}
+
+.paper-table .money-cell,
+.paper-table .rate-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
 .paper-totals {
@@ -570,7 +602,12 @@ label {
   top: 0;
   width: 900px;
   pointer-events: none;
-  opacity: 0;
+  z-index: -1;
+}
+
+.offscreen-render .statement-paper {
+  margin: 0;
+  box-shadow: none;
 }
 
 .paper-notice {
@@ -818,6 +855,14 @@ label {
     min-height: 297mm;
     box-shadow: none;
     page-break-after: avoid;
+  }
+
+  .paper-preview-frame,
+  .paper-preview-scale {
+    width: auto;
+    height: auto !important;
+    overflow: visible;
+    transform: none !important;
   }
 
   @page {

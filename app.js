@@ -422,6 +422,20 @@
     window.setTimeout(() => toast.remove(), 2800);
   }
 
+  function fitPreviewPaper() {
+    window.requestAnimationFrame(() => {
+      const frame = app.querySelector("[data-preview-frame]");
+      const scaleLayer = app.querySelector("[data-preview-scale]");
+      const paper = app.querySelector("#statement-paper");
+      if (!frame || !scaleLayer || !paper) return;
+      const available = Math.max(240, frame.clientWidth);
+      const paperWidth = paper.offsetWidth || 794;
+      const scale = Math.min(1, available / paperWidth);
+      scaleLayer.style.setProperty("--preview-scale", String(scale));
+      frame.style.height = `${Math.ceil((paper.offsetHeight || 1123) * scale)}px`;
+    });
+  }
+
   function render() {
     app.innerHTML = `
       <div class="app-shell">
@@ -450,6 +464,7 @@
     if (state.view === "statement") bindStatementEvents();
     if (state.view === "records") bindRecordEvents();
     if (state.view === "customers" || state.view === "products" || state.view === "business") bindManageEvents();
+    fitPreviewPaper();
   }
 
   function navButton(view, label) {
@@ -545,7 +560,7 @@
             <button type="button" class="ghost" data-action="print-preview">인쇄</button>
           </div>
           <div class="preview-shell">
-            ${renderStatementPaper(statement)}
+            ${renderPreviewPaper(statement)}
           </div>
         </section>
       </div>
@@ -749,15 +764,16 @@
         <table class="paper-table ${showDetails ? "with-price-details" : ""}">
           ${showDetails ? `
             <colgroup>
-              <col style="width: 6%" />
-              <col style="width: 19%" />
+              <col style="width: 5%" />
+              <col style="width: 17%" />
+              <col style="width: 10%" />
+              <col style="width: 7%" />
+              <col style="width: 7%" />
               <col style="width: 11%" />
               <col style="width: 8%" />
-              <col style="width: 8%" />
+              <col style="width: 10%" />
               <col style="width: 12%" />
-              <col style="width: 9%" />
-              <col style="width: 12%" />
-              <col style="width: 15%" />
+              <col style="width: 13%" />
             </colgroup>
           ` : `
             <colgroup>
@@ -816,6 +832,16 @@
     `;
   }
 
+  function renderPreviewPaper(statement) {
+    return `
+      <div class="paper-preview-frame" data-preview-frame>
+        <div class="paper-preview-scale" data-preview-scale>
+          ${renderStatementPaper(statement)}
+        </div>
+      </div>
+    `;
+  }
+
   function renderPaperItemRow(item, index, showDetails) {
     const computed = updateItemDerived({ ...item });
     return `
@@ -826,12 +852,12 @@
         <td class="right">${escapeHtml(computed.quantity)}</td>
         <td class="center">${escapeHtml(computed.unit)}</td>
         ${showDetails ? `
-          <td class="right">${money(computed.retail_price)}</td>
-          <td class="right">${percent(computed.commission_rate)}</td>
-          <td class="right">${money(computed.commission_amount)}</td>
+          <td class="right money-cell">${money(computed.retail_price)}</td>
+          <td class="right rate-cell">${percent(computed.commission_rate)}</td>
+          <td class="right money-cell">${money(computed.commission_amount)}</td>
         ` : ""}
-        <td class="right">${money(computed.supply_unit_price)}</td>
-        <td class="right">${money(computed.amount)}</td>
+        <td class="right money-cell">${money(computed.supply_unit_price)}</td>
+        <td class="right money-cell">${money(computed.amount)}</td>
       </tr>
     `;
   }
@@ -1352,7 +1378,10 @@
       if (node) node.textContent = money(totals[field]);
     });
     const preview = app.querySelector(".preview-shell");
-    if (preview) preview.innerHTML = renderStatementPaper(state.statement);
+    if (preview) {
+      preview.innerHTML = renderPreviewPaper(state.statement);
+      fitPreviewPaper();
+    }
   }
 
   async function handleStatementAction(action, button) {
@@ -1517,15 +1546,11 @@
 
   async function getStatementCanvas(targetStatement = state.statement) {
     if (!window.html2canvas) throw new Error("html2canvas 라이브러리를 불러오지 못했습니다.");
-    let paper = document.getElementById("statement-paper");
-    let temp = null;
-    if (!paper || targetStatement.id !== state.statement.id) {
-      temp = document.createElement("div");
-      temp.className = "offscreen-render";
-      temp.innerHTML = renderStatementPaper(targetStatement);
-      document.body.appendChild(temp);
-      paper = temp.querySelector("#statement-paper");
-    }
+    const temp = document.createElement("div");
+    temp.className = "offscreen-render";
+    temp.innerHTML = renderStatementPaper(targetStatement);
+    document.body.appendChild(temp);
+    const paper = temp.querySelector("#statement-paper");
     if (!paper) throw new Error("미리보기 영역을 찾지 못했습니다.");
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
     const canvas = await window.html2canvas(paper, {
@@ -1535,7 +1560,7 @@
       logging: false,
       windowWidth: 1000
     });
-    if (temp) temp.remove();
+    temp.remove();
     return canvas;
   }
 
@@ -1900,6 +1925,8 @@
       navigator.serviceWorker.register("./sw.js").catch((error) => console.warn(error));
     });
   }
+
+  window.addEventListener("resize", fitPreviewPaper);
 
   render();
 })();
