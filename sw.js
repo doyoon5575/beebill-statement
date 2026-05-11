@@ -1,4 +1,4 @@
-const CACHE_NAME = "beebill-v5";
+const CACHE_NAME = "beebill-v6";
 const APP_SHELL = [
   "./",
   "./index.html",

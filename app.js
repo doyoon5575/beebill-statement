@@ -454,6 +454,7 @@
             ${navButton("customers", "거래처")}
             ${navButton("products", "상품")}
             ${navButton("business", "사업자")}
+            ${navButton("data", "데이터")}
           </nav>
         </header>
         ${renderView()}
@@ -463,6 +464,7 @@
     bindCommonEvents();
     if (state.view === "statement") bindStatementEvents();
     if (state.view === "records") bindRecordEvents();
+    if (state.view === "data") bindDataEvents();
     if (state.view === "customers" || state.view === "products" || state.view === "business") bindManageEvents();
     fitPreviewPaper();
   }
@@ -478,6 +480,7 @@
     if (state.view === "customers") return renderCustomersView();
     if (state.view === "products") return renderProductsView();
     if (state.view === "business") return renderBusinessView();
+    if (state.view === "data") return renderDataView();
     return renderHomeView();
   }
 
@@ -500,6 +503,7 @@
         ${homeAction("customers", "거래처 관리", "기본 수수료율 저장")}
         ${homeAction("products", "상품 관리", "소비자가, 수수료율, 공급가 저장")}
         ${homeAction("business", "사업자/도장 설정", "공급자 정보와 도장 이미지 저장")}
+        ${homeAction("data", "데이터 백업/복원", "다른 휴대폰이나 브라우저로 기록 옮기기")}
       </section>
       <section class="summary-line" aria-label="이번 달 요약">
         <div class="metric"><span>이번 달</span><b>${state.monthFilter}</b></div>
@@ -1076,6 +1080,52 @@
           </div>
           <div class="panel-body">
             ${profile.seal_image_url ? `<img src="${escapeHtml(profile.seal_image_url)}" alt="도장 미리보기" class="seal-preview" />` : '<div class="empty">등록된 도장 이미지가 없습니다.</div>'}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderDataView() {
+    return `
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">데이터 백업/복원</h2>
+          </div>
+          <div class="panel-body">
+            <div class="empty">
+              이 앱은 현재 브라우저에 데이터를 저장합니다. 데스크톱에서 저장한 기록을 휴대폰에서 보려면 백업 파일을 내보낸 뒤 휴대폰에서 가져오면 됩니다.
+            </div>
+            <div class="summary-line">
+              <div class="metric"><span>거래명세서</span><b>${store.statements.length}건</b></div>
+              <div class="metric"><span>거래처</span><b>${store.customers.length}곳</b></div>
+              <div class="metric"><span>상품</span><b>${store.products.length}개</b></div>
+              <div class="metric"><span>도장</span><b>${store.businessProfile.seal_image_url ? "있음" : "없음"}</b></div>
+            </div>
+            <div class="toolbar">
+              <button type="button" class="primary" data-action="export-data" data-testid="export-data">백업 파일 저장</button>
+              <label class="import-button">
+                백업 파일 가져오기
+                <input type="file" accept="application/json,.json" data-import-data data-testid="import-data" />
+              </label>
+            </div>
+            <div class="total-box">
+              <span>옮기는 방법</span>
+              <small>1. 기존에 작성하던 PC/브라우저에서 이 화면의 백업 파일 저장을 누릅니다.<br />2. 저장된 JSON 파일을 카카오톡, 메일, 구글드라이브 등으로 휴대폰에 보냅니다.<br />3. 휴대폰에서 이 앱을 열고 백업 파일 가져오기를 누릅니다.</small>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">저장 방식 안내</h2>
+          </div>
+          <div class="panel-body">
+            <div class="total-box">
+              <span>현재 저장 위치</span>
+              <b>이 브라우저 내부 저장소</b>
+              <small>같은 주소라도 PC Chrome, 휴대폰 Safari, 휴대폰 Chrome은 저장소가 서로 다릅니다. 모든 기기에서 자동 동기화하려면 Supabase 같은 클라우드 DB 연결이 필요합니다.</small>
+            </div>
           </div>
         </section>
       </div>
@@ -1688,6 +1738,74 @@
     root.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", () => handleRecordAction(button.dataset.action, button));
     });
+  }
+
+  function bindDataEvents() {
+    app.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.action === "export-data") exportData();
+      });
+    });
+
+    const input = app.querySelector("[data-import-data]");
+    if (input) {
+      input.addEventListener("change", importData);
+    }
+  }
+
+  function exportData() {
+    const backup = {
+      app: "beebill-statement",
+      version: 2,
+      exported_at: new Date().toISOString(),
+      data: store
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+    triggerDownload(blob, `거래명세서_백업_${today()}.json`);
+    showToast("백업 파일을 저장했습니다.");
+  }
+
+  function importData(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result || "{}"));
+        const imported = normalizeStore(raw.data || raw, {
+          customers: [],
+          products: [],
+          statements: [],
+          businessProfile: { ...DEFAULT_BUSINESS_PROFILE }
+        });
+        store = mergeStores(store, imported);
+        persist();
+        showToast("백업 데이터를 가져왔습니다.");
+        render();
+      } catch (error) {
+        console.error(error);
+        showToast("백업 파일을 읽지 못했습니다.");
+      }
+    };
+    reader.onerror = () => showToast("백업 파일을 읽지 못했습니다.");
+    reader.readAsText(file, "utf-8");
+  }
+
+  function mergeStores(current, imported) {
+    return {
+      businessProfile: imported.businessProfile?.business_name ? imported.businessProfile : current.businessProfile,
+      products: mergeById(current.products, imported.products),
+      customers: mergeById(current.customers, imported.customers),
+      statements: mergeById(current.statements, imported.statements)
+        .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
+    };
+  }
+
+  function mergeById(currentRows, importedRows) {
+    const map = new Map();
+    currentRows.forEach((row) => map.set(row.id || uid("row"), row));
+    importedRows.forEach((row) => map.set(row.id || uid("row"), row));
+    return [...map.values()];
   }
 
   async function handleRecordAction(action, button) {
