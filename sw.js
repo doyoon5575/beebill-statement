@@ -1,13 +1,13 @@
-const CACHE_NAME = "beebill-v6";
+const CACHE_NAME = "beebill-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./manifest.webmanifest",
+  "./styles.css?v=20260511-2",
+  "./app.js?v=20260511-2",
+  "./manifest.webmanifest?v=20260511-2",
   "./assets/icon.svg",
-  "./vendor/html2canvas.min.js",
-  "./vendor/jspdf.umd.min.js"
+  "./vendor/html2canvas.min.js?v=20260511-2",
+  "./vendor/jspdf.umd.min.js?v=20260511-2"
 ];
 
 self.addEventListener("install", (event) => {
@@ -27,15 +27,12 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html"));
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html")))
   );
 });

@@ -1,4 +1,5 @@
 (function () {
+  const APP_VERSION = "2026.05.11-2";
   const STORAGE_KEY = "beebill.statement.v2";
   const LEGACY_STORAGE_KEY = "beebill.statement.v1";
 
@@ -443,7 +444,10 @@
           <div class="brand-lockup">
             <div class="brand-mark" aria-hidden="true">BB</div>
             <div class="brand-text">
-              <h1 class="brand-title">꿀벌빵 거래명세서 생성기</h1>
+              <div class="brand-title-row">
+                <h1 class="brand-title">꿀벌빵 거래명세서 생성기</h1>
+                <span class="version-badge">v${APP_VERSION}</span>
+              </div>
               <p class="brand-subtitle">공급가 자동계산 · 도장 포함 A4 출력 · 발송기록</p>
             </div>
           </div>
@@ -2040,7 +2044,10 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch((error) => console.warn(error));
+      navigator.serviceWorker
+        .register(`./sw.js?v=${encodeURIComponent(APP_VERSION)}`)
+        .then((registration) => registration.update())
+        .catch((error) => console.warn(error));
     });
   }
 
