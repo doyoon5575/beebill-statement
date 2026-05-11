@@ -1,0 +1,9 @@
+{
+  "name": "beebill-statement",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile PWA for Korean transaction statements",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "꿀벌빵 거래명세서 생성기",
+  "short_name": "BeeBill",
+  "description": "모바일 A4 거래명세서 작성, PDF/JPG 저장, 발송기록 관리",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#f5b82e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

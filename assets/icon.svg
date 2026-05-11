@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="BeeBill">
+  <rect width="512" height="512" rx="88" fill="#f5b82e"/>
+  <path d="M128 142h256v228H128z" fill="#fff" stroke="#231800" stroke-width="18"/>
+  <path d="M167 198h178M167 244h178M167 290h118" stroke="#231800" stroke-width="20" stroke-linecap="round"/>
+  <path d="M91 104h66l33 57-33 57H91l-33-57zM355 104h66l33 57-33 57h-66l-33-57z" fill="#147f7b" stroke="#231800" stroke-width="14"/>
+  <path d="M220 382h72" stroke="#231800" stroke-width="20" stroke-linecap="round"/>
+</svg>
