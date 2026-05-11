@@ -16,6 +16,18 @@ node .\server.mjs
 
 GitHub 저장소를 Vercel에 연결하면 휴대폰에서 접속 가능한 `https://프로젝트명.vercel.app` 주소가 생성됩니다.
 
+현재 바로 열 수 있는 모바일 웹 주소:
+
+- https://doyoon5575.github.io/beebill-statement/
+
+GitHub 저장소:
+
+- https://github.com/doyoon5575/beebill-statement
+
+Vercel 연결:
+
+- https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdoyoon5575%2Fbeebill-statement&project-name=beebill-statement&repository-name=beebill-statement
+
 권장 Vercel 설정:
 
 - Framework Preset: `Other`
