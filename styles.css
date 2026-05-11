@@ -295,7 +295,7 @@ label {
 
 .item-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1.5fr) minmax(86px, 1fr) 72px 80px minmax(96px, 1fr) 44px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 44px;
   gap: 8px;
   align-items: end;
   border: 1px solid var(--line);
@@ -339,6 +339,14 @@ label {
   display: block;
   margin-top: 4px;
   font-size: 18px;
+}
+
+.total-box small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .toolbar {
@@ -436,6 +444,10 @@ label {
   font-size: 13px;
 }
 
+.paper-table.with-price-details {
+  font-size: 11px;
+}
+
 .paper-table th,
 .paper-table td {
   height: 36px;
@@ -473,6 +485,12 @@ label {
   white-space: pre-wrap;
 }
 
+.account-line {
+  margin-top: 14px;
+  border-top: 1px solid #d1d5db;
+  padding-top: 9px;
+}
+
 .paper-total-lines {
   border: 1.5px solid #111827;
 }
@@ -506,9 +524,53 @@ label {
 }
 
 .paper-footer {
-  margin-top: 36px;
+  margin-top: 34px;
   text-align: right;
   font-size: 15px;
+}
+
+.seal-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 92px;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.seal-image {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+}
+
+.no-seal {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px dashed #9ca3af;
+  padding: 0 10px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.seal-preview {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.offscreen-render {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 900px;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .paper-notice {
@@ -526,7 +588,7 @@ label {
 
 .search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: minmax(0, 1fr) 150px 150px;
   gap: 10px;
 }
 
@@ -608,6 +670,10 @@ label {
   color: #083c3a;
   background: #dff7f4;
   font-weight: 900;
+}
+
+.compact-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .empty {
@@ -694,6 +760,10 @@ label {
 
   .item-row .wide {
     grid-column: 1 / -1;
+  }
+
+  .compact-options {
+    grid-template-columns: 1fr;
   }
 
   .record-row,

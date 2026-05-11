@@ -1,22 +1,31 @@
 (function () {
-  const STORAGE_KEY = "beebill.statement.v1";
-  const SUPPLIER_DEFAULT = {
-    company: "꿀벌빵",
-    representative: "김도윤",
+  const STORAGE_KEY = "beebill.statement.v2";
+  const LEGACY_STORAGE_KEY = "beebill.statement.v1";
+
+  const DEFAULT_BUSINESS_PROFILE = {
+    business_name: "꿀벌빵",
+    representative_name: "김도윤",
+    business_registration_number: "",
     phone: "010-0000-0000",
-    businessNo: "",
-    address: ""
+    address: "",
+    email: "",
+    business_type: "",
+    business_item: "",
+    bank_name: "",
+    bank_account: "",
+    account_holder: "",
+    seal_image_url: ""
   };
 
   const app = document.getElementById("app");
 
   const state = {
     view: "home",
-    manageTab: "customers",
     editingStatementId: null,
     editingCustomerId: null,
     editingProductId: null,
     search: "",
+    statusFilter: "all",
     monthFilter: currentMonth(),
     statement: null
   };
@@ -27,43 +36,178 @@
   function loadStore() {
     const fallback = {
       customers: [],
-      products: [
-        {
-          id: uid("product"),
-          name: "꿀벌빵",
-          spec: "12개입",
-          default_price: 29000,
-          unit: "박스",
-          memo: "",
-          created_at: new Date().toISOString()
-        },
-        {
-          id: uid("product"),
-          name: "꿀벌빵",
-          spec: "5개입",
-          default_price: 12000,
-          unit: "박스",
-          memo: "",
-          created_at: new Date().toISOString()
-        }
-      ],
+      products: defaultProducts(),
       statements: [],
-      supplier: SUPPLIER_DEFAULT
+      businessProfile: { ...DEFAULT_BUSINESS_PROFILE }
     };
 
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (!parsed) return fallback;
-      return {
-        customers: Array.isArray(parsed.customers) ? parsed.customers : [],
-        products: Array.isArray(parsed.products) && parsed.products.length ? parsed.products : fallback.products,
-        statements: Array.isArray(parsed.statements) ? parsed.statements : [],
-        supplier: { ...SUPPLIER_DEFAULT, ...(parsed.supplier || {}) }
-      };
+      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!saved) return fallback;
+      const parsed = JSON.parse(saved);
+      return normalizeStore(parsed, fallback);
     } catch (error) {
       console.warn(error);
       return fallback;
     }
+  }
+
+  function normalizeStore(parsed, fallback) {
+    const businessProfile = normalizeBusinessProfile(parsed.businessProfile || parsed.supplier || {});
+    const products = Array.isArray(parsed.products) && parsed.products.length
+      ? parsed.products.map(normalizeProduct)
+      : fallback.products;
+    const customers = Array.isArray(parsed.customers)
+      ? parsed.customers.map(normalizeCustomer)
+      : [];
+    const statements = Array.isArray(parsed.statements)
+      ? parsed.statements.map(normalizeStatement)
+      : [];
+
+    return { customers, products, statements, businessProfile };
+  }
+
+  function defaultProducts() {
+    return [
+      normalizeProduct({
+        id: uid("product"),
+        name: "꿀벌빵",
+        spec: "12개입",
+        unit: "박스",
+        retail_price: 29000,
+        default_commission_rate: 30,
+        price_mode: "auto",
+        memo: "",
+        created_at: new Date().toISOString()
+      }),
+      normalizeProduct({
+        id: uid("product"),
+        name: "꿀벌빵",
+        spec: "5개입",
+        unit: "박스",
+        retail_price: 12000,
+        default_commission_rate: 30,
+        price_mode: "auto",
+        memo: "",
+        created_at: new Date().toISOString()
+      })
+    ];
+  }
+
+  function normalizeBusinessProfile(input) {
+    return {
+      ...DEFAULT_BUSINESS_PROFILE,
+      ...input,
+      business_name: input.business_name || input.company || DEFAULT_BUSINESS_PROFILE.business_name,
+      representative_name: input.representative_name || input.representative || DEFAULT_BUSINESS_PROFILE.representative_name,
+      business_registration_number: input.business_registration_number || input.businessNo || "",
+      phone: input.phone || DEFAULT_BUSINESS_PROFILE.phone,
+      address: input.address || ""
+    };
+  }
+
+  function normalizeCustomer(customer) {
+    return {
+      id: customer.id || uid("customer"),
+      name: customer.name || "",
+      manager: customer.manager || "",
+      phone: customer.phone || "",
+      address: customer.address || "",
+      default_commission_rate: parseNumber(customer.default_commission_rate),
+      memo: customer.memo || "",
+      created_at: customer.created_at || new Date().toISOString(),
+      updated_at: customer.updated_at || customer.created_at || new Date().toISOString()
+    };
+  }
+
+  function normalizeProduct(product) {
+    const retailPrice = parseNumber(product.retail_price ?? product.default_price);
+    const defaultRate = parseNumber(product.default_commission_rate);
+    const priceMode = product.price_mode === "manual" ? "manual" : "auto";
+    const defaultSupplyPrice = priceMode === "manual"
+      ? parseNumber(product.default_supply_price ?? product.default_price)
+      : calculateSupplyPrice(retailPrice, defaultRate);
+    return {
+      id: product.id || uid("product"),
+      name: product.name || "",
+      spec: product.spec || "",
+      unit: product.unit || "박스",
+      retail_price: retailPrice,
+      default_commission_rate: defaultRate,
+      default_supply_price: defaultSupplyPrice,
+      price_mode: priceMode,
+      memo: product.memo || "",
+      created_at: product.created_at || new Date().toISOString(),
+      updated_at: product.updated_at || product.created_at || new Date().toISOString()
+    };
+  }
+
+  function normalizeStatement(statement) {
+    const normalized = {
+      ...statement,
+      id: statement.id || uid("statement"),
+      customer_id: statement.customer_id || "",
+      customer_name: statement.customer_name || "",
+      customer_manager: statement.customer_manager || "",
+      customer_phone: statement.customer_phone || "",
+      customer_address: statement.customer_address || "",
+      customer_default_commission_rate: parseNumber(statement.customer_default_commission_rate),
+      issue_date: statement.issue_date || today(),
+      delivery_date: statement.delivery_date || statement.issue_date || today(),
+      vat_mode: statement.vat_mode || "none",
+      memo: statement.memo || "",
+      show_seal: statement.show_seal !== false,
+      show_price_details: Boolean(statement.show_price_details),
+      status: statement.status || "draft",
+      sent_method: statement.sent_method || "",
+      sent_at: statement.sent_at || "",
+      pdf_url: statement.pdf_url || "",
+      jpg_url: statement.jpg_url || "",
+      created_at: statement.created_at || new Date().toISOString(),
+      updated_at: statement.updated_at || statement.created_at || new Date().toISOString(),
+      items: Array.isArray(statement.items) && statement.items.length
+        ? statement.items.map(normalizeItem)
+        : [normalizeItem({})]
+    };
+
+    const legacySupplier = statement.supplier || {};
+    normalized.business_name = statement.business_name || legacySupplier.company || DEFAULT_BUSINESS_PROFILE.business_name;
+    normalized.representative_name = statement.representative_name || legacySupplier.representative || DEFAULT_BUSINESS_PROFILE.representative_name;
+    normalized.business_registration_number = statement.business_registration_number || legacySupplier.businessNo || "";
+    normalized.supplier_phone = statement.supplier_phone || legacySupplier.phone || "";
+    normalized.supplier_address = statement.supplier_address || legacySupplier.address || "";
+    normalized.supplier_email = statement.supplier_email || "";
+    normalized.business_type = statement.business_type || "";
+    normalized.business_item = statement.business_item || "";
+    normalized.bank_name = statement.bank_name || "";
+    normalized.bank_account = statement.bank_account || "";
+    normalized.account_holder = statement.account_holder || "";
+    normalized.seal_image_url = statement.seal_image_url || "";
+
+    const totals = calculate(normalized);
+    normalized.subtotal = totals.subtotal;
+    normalized.vat = totals.vat;
+    normalized.total = totals.total;
+    return normalized;
+  }
+
+  function normalizeItem(item) {
+    const normalized = {
+      id: item.id || uid("item"),
+      product_name: item.product_name || item.name || "",
+      spec: item.spec || "",
+      unit: item.unit || "박스",
+      retail_price: parseNumber(item.retail_price ?? item.unit_price),
+      commission_rate: parseNumber(item.commission_rate),
+      commission_amount: parseNumber(item.commission_amount),
+      price_mode: item.price_mode === "manual" ? "manual" : "auto",
+      supply_unit_price: parseNumber(item.supply_unit_price ?? item.unit_price),
+      quantity: parseNumber(item.quantity) || 1,
+      retail_total: parseNumber(item.retail_total),
+      supply_total: parseNumber(item.supply_total),
+      amount: parseNumber(item.amount)
+    };
+    return updateItemDerived(normalized);
   }
 
   function persist() {
@@ -87,20 +231,27 @@
     return today().slice(0, 7);
   }
 
-  function createBlankItem() {
+  function createBlankItem(overrides = {}) {
     const product = store.products[0];
-    return {
+    const commissionRate = parseNumber(overrides.commission_rate ?? product?.default_commission_rate);
+    const item = {
       id: uid("item"),
       product_name: product ? product.name : "",
       spec: product ? product.spec : "",
-      quantity: 1,
       unit: product ? product.unit : "박스",
-      unit_price: product ? Number(product.default_price) : 0
+      retail_price: product ? Number(product.retail_price) : 0,
+      commission_rate: commissionRate,
+      price_mode: product?.price_mode || "auto",
+      supply_unit_price: product ? Number(product.default_supply_price) : 0,
+      quantity: 1,
+      ...overrides
     };
+    return updateItemDerived(item);
   }
 
   function createBlankStatement() {
     const issueDate = today();
+    const profile = store.businessProfile;
     return {
       id: uid("statement"),
       statement_no: nextStatementNo(issueDate),
@@ -109,8 +260,23 @@
       customer_manager: "",
       customer_phone: "",
       customer_address: "",
+      customer_default_commission_rate: 0,
       issue_date: issueDate,
       delivery_date: issueDate,
+      business_name: profile.business_name,
+      representative_name: profile.representative_name,
+      business_registration_number: profile.business_registration_number,
+      supplier_phone: profile.phone,
+      supplier_address: profile.address,
+      supplier_email: profile.email,
+      business_type: profile.business_type,
+      business_item: profile.business_item,
+      bank_name: profile.bank_name,
+      bank_account: profile.bank_account,
+      account_holder: profile.account_holder,
+      seal_image_url: profile.seal_image_url,
+      show_seal: Boolean(profile.seal_image_url),
+      show_price_details: false,
       vat_mode: "none",
       memo: "",
       status: "draft",
@@ -137,16 +303,34 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  function roundWon(value) {
+    return Math.round(Number(value) || 0);
+  }
+
+  function roundRate(value) {
+    return Math.round((Number(value) || 0) * 100) / 100;
+  }
+
   function money(value) {
-    return `${Math.round(Number(value) || 0).toLocaleString("ko-KR")}원`;
+    return `${roundWon(value).toLocaleString("ko-KR")}원`;
+  }
+
+  function numberInput(value, decimals = false) {
+    const parsed = parseNumber(value);
+    if (!parsed) return "";
+    return decimals ? String(parsed) : roundWon(parsed).toLocaleString("ko-KR");
+  }
+
+  function percent(value) {
+    return `${roundRate(value).toLocaleString("ko-KR")}%`;
   }
 
   function productOptionValue(product) {
-    return `${product.name} | ${product.spec || "규격 없음"} | ${money(product.default_price)}`;
+    return `${product.name} | ${product.spec || "규격 없음"} | 소비자가 ${money(product.retail_price)} | 공급가 ${money(product.default_supply_price)}`;
   }
 
   function plainMoney(value) {
-    return String(Math.round(Number(value) || 0));
+    return String(roundWon(value));
   }
 
   function escapeHtml(value) {
@@ -165,18 +349,51 @@
       .slice(0, 36) || "거래처";
   }
 
+  function calculateSupplyPrice(retailPrice, commissionRate) {
+    const commission = roundWon(parseNumber(retailPrice) * parseNumber(commissionRate) / 100);
+    return roundWon(parseNumber(retailPrice) - commission);
+  }
+
+  function updateItemDerived(item) {
+    const retailPrice = roundWon(item.retail_price);
+    const quantity = parseNumber(item.quantity);
+    let supplyUnitPrice;
+    let commissionAmount;
+    let commissionRate;
+
+    if (item.price_mode === "manual") {
+      supplyUnitPrice = roundWon(item.supply_unit_price);
+      commissionAmount = roundWon(retailPrice - supplyUnitPrice);
+      commissionRate = retailPrice > 0 ? roundRate((commissionAmount / retailPrice) * 100) : 0;
+    } else {
+      commissionRate = parseNumber(item.commission_rate);
+      commissionAmount = roundWon(retailPrice * commissionRate / 100);
+      supplyUnitPrice = roundWon(retailPrice - commissionAmount);
+    }
+
+    item.retail_price = retailPrice;
+    item.quantity = quantity;
+    item.commission_rate = commissionRate;
+    item.commission_amount = commissionAmount;
+    item.supply_unit_price = supplyUnitPrice;
+    item.retail_total = roundWon(retailPrice * quantity);
+    item.supply_total = roundWon(supplyUnitPrice * quantity);
+    item.amount = item.supply_total;
+    return item;
+  }
+
   function calculate(statement) {
     const baseAmount = statement.items.reduce((sum, item) => {
-      return sum + parseNumber(item.quantity) * parseNumber(item.unit_price);
+      return sum + updateItemDerived({ ...item }).supply_total;
     }, 0);
 
     if (statement.vat_mode === "exclusive") {
-      const vat = Math.round(baseAmount * 0.1);
+      const vat = roundWon(baseAmount * 0.1);
       return { subtotal: baseAmount, vat, total: baseAmount + vat };
     }
 
     if (statement.vat_mode === "inclusive") {
-      const subtotal = Math.round(baseAmount / 1.1);
+      const subtotal = roundWon(baseAmount / 1.1);
       const vat = baseAmount - subtotal;
       return { subtotal, vat, total: baseAmount };
     }
@@ -213,14 +430,16 @@
             <div class="brand-mark" aria-hidden="true">BB</div>
             <div class="brand-text">
               <h1 class="brand-title">꿀벌빵 거래명세서 생성기</h1>
-              <p class="brand-subtitle">거래명세서 · 납품기록 · 월별 정산</p>
+              <p class="brand-subtitle">공급가 자동계산 · 도장 포함 A4 출력 · 발송기록</p>
             </div>
           </div>
           <nav class="nav" aria-label="주요 화면">
             ${navButton("home", "홈")}
-            ${navButton("statement", "새 거래명세서")}
-            ${navButton("records", "기록 보기")}
-            ${navButton("manage", "거래처/상품")}
+            ${navButton("statement", "새 작성")}
+            ${navButton("records", "기록")}
+            ${navButton("customers", "거래처")}
+            ${navButton("products", "상품")}
+            ${navButton("business", "사업자")}
           </nav>
         </header>
         ${renderView()}
@@ -230,7 +449,7 @@
     bindCommonEvents();
     if (state.view === "statement") bindStatementEvents();
     if (state.view === "records") bindRecordEvents();
-    if (state.view === "manage") bindManageEvents();
+    if (state.view === "customers" || state.view === "products" || state.view === "business") bindManageEvents();
   }
 
   function navButton(view, label) {
@@ -241,7 +460,9 @@
   function renderView() {
     if (state.view === "statement") return renderStatementView();
     if (state.view === "records") return renderRecordsView();
-    if (state.view === "manage") return renderManageView();
+    if (state.view === "customers") return renderCustomersView();
+    if (state.view === "products") return renderProductsView();
+    if (state.view === "business") return renderBusinessView();
     return renderHomeView();
   }
 
@@ -259,18 +480,11 @@
 
     return `
       <section class="home-actions" aria-label="빠른 실행">
-        <button class="home-action" type="button" data-view="statement" data-testid="new-statement">
-          <strong>+ 새 거래명세서 작성</strong>
-          <span>A4 미리보기와 PDF/JPG 저장</span>
-        </button>
-        <button class="home-action" type="button" data-view="records">
-          <strong>기록 보기</strong>
-          <span>검색, 발송상태, 월별 합계</span>
-        </button>
-        <button class="home-action" type="button" data-view="manage">
-          <strong>거래처 / 상품 관리</strong>
-          <span>자주 쓰는 거래처와 단가 저장</span>
-        </button>
+        ${homeAction("statement", "+ 새 거래명세서 작성", "공급가 계산, A4 미리보기, PDF/JPG 저장", "new-statement")}
+        ${homeAction("records", "기록 보기", "검색, 발송상태, 월별 합계")}
+        ${homeAction("customers", "거래처 관리", "기본 수수료율 저장")}
+        ${homeAction("products", "상품 관리", "소비자가, 수수료율, 공급가 저장")}
+        ${homeAction("business", "사업자/도장 설정", "공급자 정보와 도장 이미지 저장")}
       </section>
       <section class="summary-line" aria-label="이번 달 요약">
         <div class="metric"><span>이번 달</span><b>${state.monthFilter}</b></div>
@@ -290,14 +504,24 @@
     `;
   }
 
+  function homeAction(view, title, subtitle, testId = "") {
+    return `
+      <button class="home-action" type="button" data-view="${view}" ${testId ? `data-testid="${testId}"` : ""}>
+        <strong>${title}</strong>
+        <span>${subtitle}</span>
+      </button>
+    `;
+  }
+
   function renderStatementView() {
     const statement = state.statement;
+    statement.items.forEach(updateItemDerived);
     const totals = calculate(statement);
     return `
       <div class="workspace">
         <section class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">새 거래명세서 작성</h2>
+            <h2 class="panel-title">거래명세서 작성</h2>
             <button type="button" class="ghost" data-action="reset-statement">초기화</button>
           </div>
           <div class="panel-body">
@@ -374,11 +598,34 @@
           주소
           <input name="customer_address" value="${escapeHtml(statement.customer_address)}" data-statement-field="customer_address" />
         </label>
+
+        <h3 class="form-section-title full">공급자 정보</h3>
+        ${renderSupplierInputs(statement)}
+        <div class="toolbar full">
+          <button type="button" class="ghost" data-action="save-business-from-statement">이 정보를 기본 사업자 정보로 저장</button>
+        </div>
+
         <h3 class="form-section-title full">품목</h3>
         <div class="item-list full" data-item-list>
           ${statement.items.map(renderItemRow).join("")}
         </div>
         <button class="ghost full" type="button" data-action="add-item">+ 품목 추가</button>
+        <div class="form-grid full compact-options">
+          <label>
+            도장 표시
+            <select data-statement-field="show_seal">
+              ${option("true", "표시", String(Boolean(statement.show_seal)))}
+              ${option("false", "숨김", String(Boolean(statement.show_seal)))}
+            </select>
+          </label>
+          <label>
+            소비자가/수수료 표시
+            <select data-statement-field="show_price_details">
+              ${option("false", "숨김", String(Boolean(statement.show_price_details)))}
+              ${option("true", "표시", String(Boolean(statement.show_price_details)))}
+            </select>
+          </label>
+        </div>
         <label class="full">
           비고
           <textarea name="memo" data-statement-field="memo">${escapeHtml(statement.memo)}</textarea>
@@ -387,8 +634,32 @@
     `;
   }
 
+  function renderSupplierInputs(statement) {
+    const fields = [
+      ["business_name", "상호명", "text"],
+      ["representative_name", "대표자명", "text"],
+      ["business_registration_number", "사업자등록번호", "text"],
+      ["supplier_phone", "연락처", "text"],
+      ["supplier_address", "주소", "text"],
+      ["supplier_email", "이메일", "email"],
+      ["business_type", "업태", "text"],
+      ["business_item", "종목", "text"],
+      ["bank_name", "은행명", "text"],
+      ["bank_account", "계좌번호", "text"],
+      ["account_holder", "예금주", "text"]
+    ];
+
+    return fields.map(([field, label, type]) => `
+      <label class="${field === "supplier_address" ? "full" : ""}">
+        ${label}
+        <input type="${type}" value="${escapeHtml(statement[field])}" data-statement-field="${field}" />
+      </label>
+    `).join("");
+  }
+
   function renderItemRow(item) {
-    const amount = parseNumber(item.quantity) * parseNumber(item.unit_price);
+    updateItemDerived(item);
+    const isManual = item.price_mode === "manual";
     return `
       <div class="item-row" data-item-id="${item.id}">
         <label class="wide">
@@ -400,31 +671,51 @@
           <input value="${escapeHtml(item.spec)}" data-item-field="spec" />
         </label>
         <label>
-          수량
-          <input inputmode="decimal" value="${escapeHtml(item.quantity)}" data-item-field="quantity" data-testid="item-quantity" />
-        </label>
-        <label>
           단위
           <input value="${escapeHtml(item.unit)}" data-item-field="unit" />
         </label>
         <label>
-          단가
-          <input inputmode="numeric" value="${escapeHtml(item.unit_price)}" data-item-field="unit_price" data-testid="item-price" />
+          소비자가
+          <input inputmode="numeric" value="${numberInput(item.retail_price)}" data-item-field="retail_price" data-money-field data-testid="item-retail-price" />
+        </label>
+        <label>
+          수수료율
+          <input inputmode="decimal" value="${escapeHtml(item.commission_rate)}" data-item-field="commission_rate" ${isManual ? "readonly" : ""} data-testid="item-commission-rate" />
+        </label>
+        <label>
+          계산방식
+          <select data-item-field="price_mode" data-testid="item-price-mode">
+            ${option("auto", "자동계산", item.price_mode)}
+            ${option("manual", "직접입력", item.price_mode)}
+          </select>
+        </label>
+        <label>
+          공급가
+          <input inputmode="numeric" value="${numberInput(item.supply_unit_price)}" data-item-field="supply_unit_price" ${isManual ? "" : "readonly"} data-money-field data-testid="item-supply-price" />
+        </label>
+        <label>
+          수량
+          <input inputmode="decimal" value="${escapeHtml(item.quantity)}" data-item-field="quantity" data-testid="item-quantity" />
         </label>
         <button type="button" class="icon-button danger" data-action="remove-item" aria-label="품목 삭제">×</button>
-        <div class="wide total-box" aria-live="polite"><span>금액</span><b data-item-amount="${item.id}">${money(amount)}</b></div>
+        <div class="wide total-box" aria-live="polite">
+          <span>금액</span>
+          <b data-item-amount="${item.id}" data-testid="item-amount">${money(item.amount)}</b>
+          <small data-item-detail="${item.id}">수수료 ${money(item.commission_amount)} · 공급단가 ${money(item.supply_unit_price)}</small>
+        </div>
       </div>
     `;
   }
 
   function option(value, label, selected) {
-    return `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`;
+    return `<option value="${value}" ${String(value) === String(selected) ? "selected" : ""}>${label}</option>`;
   }
 
   function renderStatementPaper(statement) {
     const totals = calculate(statement);
     const rows = statement.items.length ? statement.items : [createBlankItem()];
     const fillerRows = Math.max(0, 8 - rows.length);
+    const showDetails = Boolean(statement.show_price_details);
     return `
       <article class="statement-paper" id="statement-paper" data-testid="statement-paper">
         <h2 class="paper-title">거 래 명 세 서</h2>
@@ -446,66 +737,101 @@
           <section class="party-box">
             <h3>공급자</h3>
             <dl>
-              <dt>상호</dt><dd>${escapeHtml(store.supplier.company)}</dd>
-              <dt>대표</dt><dd>${escapeHtml(store.supplier.representative)}</dd>
-              <dt>연락처</dt><dd>${escapeHtml(store.supplier.phone)}</dd>
-              <dt>사업자번호</dt><dd>${escapeHtml(store.supplier.businessNo)}</dd>
-              <dt>주소</dt><dd>${escapeHtml(store.supplier.address)}</dd>
+              <dt>상호</dt><dd>${escapeHtml(statement.business_name)}</dd>
+              <dt>대표자</dt><dd>${escapeHtml(statement.representative_name)}</dd>
+              <dt>사업자번호</dt><dd>${escapeHtml(statement.business_registration_number)}</dd>
+              <dt>연락처</dt><dd>${escapeHtml(statement.supplier_phone)}</dd>
+              <dt>주소</dt><dd>${escapeHtml(statement.supplier_address)}</dd>
+              <dt>업태/종목</dt><dd>${escapeHtml([statement.business_type, statement.business_item].filter(Boolean).join(" / "))}</dd>
             </dl>
           </section>
         </div>
-        <table class="paper-table">
-          <colgroup>
-            <col style="width: 27%" />
-            <col style="width: 16%" />
-            <col style="width: 10%" />
-            <col style="width: 10%" />
-            <col style="width: 17%" />
-            <col style="width: 20%" />
-          </colgroup>
+        <table class="paper-table ${showDetails ? "with-price-details" : ""}">
+          ${showDetails ? `
+            <colgroup>
+              <col style="width: 6%" />
+              <col style="width: 19%" />
+              <col style="width: 11%" />
+              <col style="width: 8%" />
+              <col style="width: 8%" />
+              <col style="width: 12%" />
+              <col style="width: 9%" />
+              <col style="width: 12%" />
+              <col style="width: 15%" />
+            </colgroup>
+          ` : `
+            <colgroup>
+              <col style="width: 7%" />
+              <col style="width: 28%" />
+              <col style="width: 15%" />
+              <col style="width: 10%" />
+              <col style="width: 10%" />
+              <col style="width: 14%" />
+              <col style="width: 16%" />
+            </colgroup>
+          `}
           <thead>
             <tr>
-              <th>품목</th>
+              <th>No.</th>
+              <th>품목명</th>
               <th>규격</th>
               <th>수량</th>
               <th>단위</th>
-              <th>단가</th>
+              ${showDetails ? "<th>소비자가</th><th>수수료율</th><th>수수료</th>" : ""}
+              <th>공급단가</th>
               <th>금액</th>
             </tr>
           </thead>
           <tbody>
-            ${rows.map(renderPaperItemRow).join("")}
+            ${rows.map((item, index) => renderPaperItemRow(item, index, showDetails)).join("")}
             ${Array.from({ length: fillerRows }).map(() => `
               <tr>
-                <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td>
+                <td>&nbsp;</td><td></td><td></td><td></td><td></td>${showDetails ? "<td></td><td></td><td></td>" : ""}<td></td><td></td>
               </tr>
             `).join("")}
           </tbody>
         </table>
         <div class="paper-totals">
-          <div class="memo-box"><b>비고</b><br />${escapeHtml(statement.memo)}</div>
+          <div class="memo-box">
+            <b>비고</b><br />${escapeHtml(statement.memo)}
+            ${statement.bank_name || statement.bank_account || statement.account_holder ? `
+              <div class="account-line"><b>입금계좌</b> ${escapeHtml([statement.bank_name, statement.bank_account, statement.account_holder].filter(Boolean).join(" / "))}</div>
+            ` : ""}
+          </div>
           <div class="paper-total-lines">
             <div><span>공급가액</span><span>${money(totals.subtotal)}</span></div>
             <div><span>부가세</span><span>${money(totals.vat)}</span></div>
             <div><span>합계금액</span><span>${money(totals.total)}</span></div>
           </div>
         </div>
-        <p class="paper-footer">위와 같이 거래명세서를 발행합니다.<br /><br />공급자: ${escapeHtml(store.supplier.company)} &nbsp; (인)</p>
+        <div class="paper-footer">
+          <div>위와 같이 거래명세서를 발행합니다.</div>
+          <div class="seal-line">
+            <span>공급자: ${escapeHtml(statement.business_name)} &nbsp; (인)</span>
+            ${statement.show_seal && statement.seal_image_url ? `<img src="${escapeHtml(statement.seal_image_url)}" alt="도장" class="seal-image" />` : '<span class="no-seal">도장 없음</span>'}
+          </div>
+        </div>
         <p class="paper-notice">본 거래명세서는 납품 및 거래내역 확인용이며, 세금계산서·현금영수증 등 세무 증빙은 별도 발급이 필요할 수 있습니다.</p>
       </article>
     `;
   }
 
-  function renderPaperItemRow(item) {
-    const amount = parseNumber(item.quantity) * parseNumber(item.unit_price);
+  function renderPaperItemRow(item, index, showDetails) {
+    const computed = updateItemDerived({ ...item });
     return `
       <tr>
-        <td>${escapeHtml(item.product_name)}</td>
-        <td class="center">${escapeHtml(item.spec)}</td>
-        <td class="right">${escapeHtml(item.quantity)}</td>
-        <td class="center">${escapeHtml(item.unit)}</td>
-        <td class="right">${money(item.unit_price)}</td>
-        <td class="right">${money(amount)}</td>
+        <td class="center">${index + 1}</td>
+        <td>${escapeHtml(computed.product_name)}</td>
+        <td class="center">${escapeHtml(computed.spec)}</td>
+        <td class="right">${escapeHtml(computed.quantity)}</td>
+        <td class="center">${escapeHtml(computed.unit)}</td>
+        ${showDetails ? `
+          <td class="right">${money(computed.retail_price)}</td>
+          <td class="right">${percent(computed.commission_rate)}</td>
+          <td class="right">${money(computed.commission_amount)}</td>
+        ` : ""}
+        <td class="right">${money(computed.supply_unit_price)}</td>
+        <td class="right">${money(computed.amount)}</td>
       </tr>
     `;
   }
@@ -532,6 +858,15 @@
             <label>
               검색
               <input value="${escapeHtml(state.search)}" placeholder="거래처명, 날짜, 금액" data-record-search />
+            </label>
+            <label>
+              상태
+              <select data-status-filter>
+                ${option("all", "전체", state.statusFilter)}
+                ${option("draft", "작성중", state.statusFilter)}
+                ${option("generated", "생성완료", state.statusFilter)}
+                ${option("sent", "발송완료", state.statusFilter)}
+              </select>
             </label>
             <label>
               월별 합계
@@ -564,6 +899,7 @@
     const term = state.search.trim().toLowerCase();
     return [...store.statements]
       .filter((statement) => {
+        if (state.statusFilter !== "all" && statement.status !== state.statusFilter) return false;
         if (!term) return true;
         const haystack = [
           statement.customer_name,
@@ -572,7 +908,8 @@
           statement.statement_no,
           statement.total,
           statusLabel(statement.status),
-          statement.sent_method
+          statement.sent_method,
+          itemSummary(statement.items)
         ].join(" ").toLowerCase();
         return haystack.includes(term);
       })
@@ -607,6 +944,8 @@
                 <div class="toolbar">
                   <button type="button" class="ghost" data-action="load-record">수정</button>
                   <button type="button" class="ghost" data-action="copy-record">복사 작성</button>
+                  <button type="button" class="ghost" data-action="record-pdf">PDF 다시</button>
+                  <button type="button" class="ghost" data-action="record-jpg">JPG 다시</button>
                   <button type="button" class="secondary" data-action="record-sent">발송완료</button>
                   <button type="button" class="danger" data-action="delete-record">삭제</button>
                 </div>
@@ -620,37 +959,109 @@
 
   function itemSummary(items) {
     if (!items || !items.length) return "품목 없음";
-    const first = items[0];
+    const first = updateItemDerived({ ...items[0] });
     const extra = items.length > 1 ? ` 외 ${items.length - 1}건` : "";
-    return `${first.product_name || "품목"}${extra}`;
+    return `${first.product_name || "품목"} ${money(first.supply_unit_price)}${extra}`;
   }
 
-  function renderManageView() {
-    const isCustomers = state.manageTab === "customers";
+  function renderCustomersView() {
     return `
       <div class="workspace">
         <section class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">거래처 / 상품 관리</h2>
-            <div class="segmented" role="group" aria-label="관리 탭">
-              <button type="button" data-manage-tab="customers" aria-pressed="${isCustomers}">거래처</button>
-              <button type="button" data-manage-tab="products" aria-pressed="${!isCustomers}">상품</button>
-            </div>
+            <h2 class="panel-title">거래처 관리</h2>
           </div>
           <div class="panel-body">
-            ${isCustomers ? renderCustomerEditor() : renderProductEditor()}
+            ${renderCustomerEditor()}
           </div>
         </section>
         <section class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">${isCustomers ? "거래처 목록" : "상품 목록"}</h2>
-            <span class="status-pill">${isCustomers ? store.customers.length : store.products.length}건</span>
+            <h2 class="panel-title">거래처 목록</h2>
+            <span class="status-pill">${store.customers.length}건</span>
           </div>
           <div class="panel-body">
-            ${isCustomers ? renderCustomerList() : renderProductList()}
+            ${renderCustomerList()}
           </div>
         </section>
       </div>
+    `;
+  }
+
+  function renderProductsView() {
+    return `
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">상품 관리</h2>
+          </div>
+          <div class="panel-body">
+            ${renderProductEditor()}
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">상품 목록</h2>
+            <span class="status-pill">${store.products.length}건</span>
+          </div>
+          <div class="panel-body">
+            ${renderProductList()}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderBusinessView() {
+    const profile = store.businessProfile;
+    return `
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">사업자 정보 설정</h2>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid" data-editor="business">
+              ${businessField("business_name", "상호명", profile.business_name)}
+              ${businessField("representative_name", "대표자명", profile.representative_name)}
+              ${businessField("business_registration_number", "사업자등록번호", profile.business_registration_number)}
+              ${businessField("phone", "연락처", profile.phone)}
+              ${businessField("address", "주소", profile.address, "full")}
+              ${businessField("email", "이메일", profile.email, "", "email")}
+              ${businessField("business_type", "업태", profile.business_type)}
+              ${businessField("business_item", "종목", profile.business_item)}
+              ${businessField("bank_name", "은행명", profile.bank_name)}
+              ${businessField("bank_account", "계좌번호", profile.bank_account)}
+              ${businessField("account_holder", "예금주", profile.account_holder)}
+              <label class="full">
+                도장 이미지
+                <input type="file" accept="image/png,image/jpeg" data-seal-upload />
+              </label>
+              <div class="toolbar full">
+                <button type="button" class="primary" data-action="save-business">사업자 정보 저장</button>
+                ${profile.seal_image_url ? '<button type="button" class="danger" data-action="remove-seal">도장 삭제</button>' : ""}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">도장 미리보기</h2>
+          </div>
+          <div class="panel-body">
+            ${profile.seal_image_url ? `<img src="${escapeHtml(profile.seal_image_url)}" alt="도장 미리보기" class="seal-preview" />` : '<div class="empty">등록된 도장 이미지가 없습니다.</div>'}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function businessField(name, label, value, className = "", type = "text") {
+    return `
+      <label class="${className}">
+        ${label}
+        <input type="${type}" name="${name}" value="${escapeHtml(value)}" />
+      </label>
     `;
   }
 
@@ -671,6 +1082,10 @@
           <input name="phone" value="${escapeHtml(editing.phone)}" />
         </label>
         <label>
+          기본 수수료율
+          <input inputmode="decimal" name="default_commission_rate" value="${escapeHtml(editing.default_commission_rate)}" />
+        </label>
+        <label class="full">
           주소
           <input name="address" value="${escapeHtml(editing.address)}" />
         </label>
@@ -688,6 +1103,7 @@
 
   function renderProductEditor() {
     const editing = store.products.find((product) => product.id === state.editingProductId) || {};
+    const preview = normalizeProduct(editing);
     return `
       <div class="form-grid" data-editor="product">
         <label>
@@ -699,13 +1115,32 @@
           <input name="spec" value="${escapeHtml(editing.spec)}" />
         </label>
         <label>
-          기본 단가
-          <input inputmode="numeric" name="default_price" value="${escapeHtml(editing.default_price)}" />
-        </label>
-        <label>
           단위
           <input name="unit" value="${escapeHtml(editing.unit || "박스")}" />
         </label>
+        <label>
+          소비자가
+          <input inputmode="numeric" name="retail_price" value="${numberInput(editing.retail_price)}" data-money-field />
+        </label>
+        <label>
+          기본 수수료율
+          <input inputmode="decimal" name="default_commission_rate" value="${escapeHtml(editing.default_commission_rate ?? 30)}" />
+        </label>
+        <label>
+          공급가 계산방식
+          <select name="price_mode">
+            ${option("auto", "자동계산", editing.price_mode || "auto")}
+            ${option("manual", "직접입력", editing.price_mode || "auto")}
+          </select>
+        </label>
+        <label>
+          기본 공급가
+          <input inputmode="numeric" name="default_supply_price" value="${numberInput(editing.default_supply_price || preview.default_supply_price)}" data-money-field />
+        </label>
+        <div class="total-box">
+          <span>자동계산 공급가</span>
+          <b>${money(calculateSupplyPrice(editing.retail_price, editing.default_commission_rate ?? 30))}</b>
+        </div>
         <label class="full">
           메모
           <textarea name="memo">${escapeHtml(editing.memo)}</textarea>
@@ -729,6 +1164,7 @@
               <div class="manage-meta">
                 <span>${escapeHtml(customer.manager || "담당자 없음")}</span>
                 <span>${escapeHtml(customer.phone || "연락처 없음")}</span>
+                <span>기본 수수료 ${percent(customer.default_commission_rate)}</span>
                 <span>${escapeHtml(customer.address || "주소 없음")}</span>
               </div>
             </div>
@@ -751,9 +1187,10 @@
             <div>
               <p class="manage-title">${escapeHtml(product.name)} <span>${escapeHtml(product.spec)}</span></p>
               <div class="manage-meta">
-                <span>${money(product.default_price)}</span>
+                <span>소비자가 ${money(product.retail_price)}</span>
+                <span>수수료 ${percent(product.default_commission_rate)}</span>
+                <span>공급가 ${money(product.default_supply_price)}</span>
                 <span>${escapeHtml(product.unit || "단위 없음")}</span>
-                <span>${escapeHtml(product.memo || "")}</span>
               </div>
             </div>
             <div class="toolbar">
@@ -788,9 +1225,14 @@
   function bindStatementEvents() {
     app.querySelectorAll("[data-statement-field]").forEach((input) => {
       input.addEventListener("input", () => {
-        state.statement[input.dataset.statementField] = input.value;
-        if (input.dataset.statementField === "customer_name") fillCustomerIfMatched(input.value);
-        if (input.dataset.statementField === "issue_date" && !state.editingStatementId) {
+        const field = input.dataset.statementField;
+        if (field === "show_seal" || field === "show_price_details") {
+          state.statement[field] = input.value === "true";
+        } else {
+          state.statement[field] = input.value;
+        }
+        if (field === "customer_name") fillCustomerIfMatched(input.value);
+        if (field === "issue_date" && !state.editingStatementId) {
           state.statement.statement_no = nextStatementNo(input.value);
           const noInput = app.querySelector('[data-statement-field="statement_no"]');
           if (noInput) noInput.value = state.statement.statement_no;
@@ -798,25 +1240,60 @@
         refreshStatementOutput();
       });
       input.addEventListener("change", () => {
-        state.statement[input.dataset.statementField] = input.value;
+        const field = input.dataset.statementField;
+        state.statement[field] = field === "show_seal" || field === "show_price_details" ? input.value === "true" : input.value;
         refreshStatementOutput();
       });
     });
 
     app.querySelectorAll("[data-item-field]").forEach((input) => {
-      input.addEventListener("input", () => {
-        const row = input.closest("[data-item-id]");
-        const item = state.statement.items.find((candidate) => candidate.id === row.dataset.itemId);
-        if (!item) return;
-        item[input.dataset.itemField] = input.value;
-        if (input.dataset.itemField === "product_name") fillProductIfMatched(item, input.value, row);
-        refreshStatementOutput();
+      input.addEventListener("input", () => updateItemFromInput(input));
+      input.addEventListener("change", () => updateItemFromInput(input, input.dataset.itemField === "price_mode"));
+      input.addEventListener("blur", () => {
+        if (input.dataset.moneyField !== undefined) {
+          window.setTimeout(() => {
+            input.value = numberInput(input.value);
+          }, 0);
+        }
       });
     });
 
     app.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", () => handleStatementAction(button.dataset.action, button));
     });
+  }
+
+  function updateItemFromInput(input, rerender = false) {
+    const row = input.closest("[data-item-id]");
+    const item = state.statement.items.find((candidate) => candidate.id === row.dataset.itemId);
+    if (!item) return;
+    const field = input.dataset.itemField;
+    item[field] = field === "product_name" || field === "spec" || field === "unit" || field === "price_mode"
+      ? input.value
+      : parseNumber(input.value);
+
+    if (field === "product_name") fillProductIfMatched(item, input.value, row);
+    if (field === "price_mode") rerender = true;
+    updateItemDerived(item);
+
+    if (rerender) {
+      render();
+      return;
+    }
+
+    refreshItemRow(row, item);
+    refreshStatementOutput();
+  }
+
+  function refreshItemRow(row, item) {
+    const amount = row.querySelector(`[data-item-amount="${item.id}"]`);
+    const detail = row.querySelector(`[data-item-detail="${item.id}"]`);
+    const supply = row.querySelector('[data-item-field="supply_unit_price"]');
+    const rate = row.querySelector('[data-item-field="commission_rate"]');
+    if (amount) amount.textContent = money(item.amount);
+    if (detail) detail.textContent = `수수료 ${money(item.commission_amount)} · 공급단가 ${money(item.supply_unit_price)}`;
+    if (supply && document.activeElement !== supply) supply.value = numberInput(item.supply_unit_price);
+    if (rate && document.activeElement !== rate) rate.value = item.commission_rate;
   }
 
   function fillCustomerIfMatched(value) {
@@ -826,6 +1303,21 @@
     state.statement.customer_manager = customer.manager || "";
     state.statement.customer_phone = customer.phone || "";
     state.statement.customer_address = customer.address || "";
+    state.statement.customer_default_commission_rate = parseNumber(customer.default_commission_rate);
+
+    if (state.statement.customer_default_commission_rate > 0) {
+      state.statement.items.forEach((item) => {
+        if (item.price_mode !== "manual") {
+          item.commission_rate = state.statement.customer_default_commission_rate;
+          updateItemDerived(item);
+        }
+      });
+      app.querySelectorAll("[data-item-id]").forEach((row) => {
+        const item = state.statement.items.find((candidate) => candidate.id === row.dataset.itemId);
+        if (item) refreshItemRow(row, item);
+      });
+    }
+
     ["customer_manager", "customer_phone", "customer_address"].forEach((field) => {
       const input = app.querySelector(`[data-statement-field="${field}"]`);
       if (input) input.value = state.statement[field];
@@ -838,22 +1330,26 @@
     item.product_name = product.name || "";
     item.spec = product.spec || "";
     item.unit = product.unit || "";
-    item.unit_price = Number(product.default_price || 0);
+    item.retail_price = Number(product.retail_price || 0);
+    item.price_mode = product.price_mode || "auto";
+    item.commission_rate = state.statement.customer_default_commission_rate > 0 ? state.statement.customer_default_commission_rate : Number(product.default_commission_rate || 0);
+    item.supply_unit_price = item.price_mode === "manual" ? Number(product.default_supply_price || 0) : calculateSupplyPrice(item.retail_price, item.commission_rate);
+    updateItemDerived(item);
     row.querySelector('[data-item-field="product_name"]').value = item.product_name;
     row.querySelector('[data-item-field="spec"]').value = item.spec;
     row.querySelector('[data-item-field="unit"]').value = item.unit;
-    row.querySelector('[data-item-field="unit_price"]').value = item.unit_price;
+    row.querySelector('[data-item-field="retail_price"]').value = numberInput(item.retail_price);
+    row.querySelector('[data-item-field="commission_rate"]').value = item.commission_rate;
+    row.querySelector('[data-item-field="price_mode"]').value = item.price_mode;
+    row.querySelector('[data-item-field="supply_unit_price"]').value = numberInput(item.supply_unit_price);
   }
 
   function refreshStatementOutput() {
+    state.statement.items.forEach(updateItemDerived);
     const totals = calculate(state.statement);
     ["subtotal", "vat", "total"].forEach((field) => {
       const node = app.querySelector(`[data-total="${field}"]`);
       if (node) node.textContent = money(totals[field]);
-    });
-    state.statement.items.forEach((item) => {
-      const node = app.querySelector(`[data-item-amount="${item.id}"]`);
-      if (node) node.textContent = money(parseNumber(item.quantity) * parseNumber(item.unit_price));
     });
     const preview = app.querySelector(".preview-shell");
     if (preview) preview.innerHTML = renderStatementPaper(state.statement);
@@ -868,7 +1364,8 @@
     }
 
     if (action === "add-item") {
-      state.statement.items.push(createBlankItem());
+      const rate = state.statement.customer_default_commission_rate || undefined;
+      state.statement.items.push(createBlankItem({ commission_rate: rate }));
       render();
       return;
     }
@@ -881,6 +1378,11 @@
       }
       state.statement.items = state.statement.items.filter((item) => item.id !== row.dataset.itemId);
       render();
+      return;
+    }
+
+    if (action === "save-business-from-statement") {
+      saveBusinessFromStatement();
       return;
     }
 
@@ -917,6 +1419,10 @@
       showToast("거래처명을 입력해 주세요.");
       return false;
     }
+    if (!statement.business_name.trim() || !statement.representative_name.trim()) {
+      showToast("공급자 상호명과 대표자명을 입력해 주세요.");
+      return false;
+    }
     const validItems = statement.items.filter((item) => item.product_name.trim() && parseNumber(item.quantity) > 0);
     if (!validItems.length) {
       showToast("품목명과 수량을 입력해 주세요.");
@@ -930,6 +1436,7 @@
     if (!validateStatement(statement)) return null;
 
     upsertCustomerFromStatement(statement);
+    statement.items.forEach(updateItemDerived);
     const totals = calculate(statement);
     const now = new Date().toISOString();
     const row = {
@@ -942,7 +1449,7 @@
       jpg_url: files.jpg_url || statement.jpg_url || "",
       updated_at: now,
       created_at: statement.created_at || now,
-      items: statement.items.map((item) => ({ ...item }))
+      items: statement.items.map((item) => ({ ...updateItemDerived({ ...item }) }))
     };
 
     const index = store.statements.findIndex((candidate) => candidate.id === row.id);
@@ -955,6 +1462,25 @@
     state.statement = { ...row, items: row.items.map((item) => ({ ...item })) };
     persist();
     return row;
+  }
+
+  function saveBusinessFromStatement() {
+    store.businessProfile = {
+      business_name: state.statement.business_name,
+      representative_name: state.statement.representative_name,
+      business_registration_number: state.statement.business_registration_number,
+      phone: state.statement.supplier_phone,
+      address: state.statement.supplier_address,
+      email: state.statement.supplier_email,
+      business_type: state.statement.business_type,
+      business_item: state.statement.business_item,
+      bank_name: state.statement.bank_name,
+      bank_account: state.statement.bank_account,
+      account_holder: state.statement.account_holder,
+      seal_image_url: state.statement.seal_image_url || store.businessProfile.seal_image_url
+    };
+    persist();
+    showToast("기본 사업자 정보로 저장했습니다.");
   }
 
   function upsertCustomerFromStatement(statement) {
@@ -976,6 +1502,7 @@
       manager: statement.customer_manager,
       phone: statement.customer_phone,
       address: statement.customer_address,
+      default_commission_rate: 0,
       memo: "",
       created_at: new Date().toISOString()
     };
@@ -988,63 +1515,85 @@
     return `거래명세서_${safeFilePart(statement.customer_name)}_${statement.issue_date}_${plainMoney(totals.total)}원.${extension}`;
   }
 
-  async function getStatementCanvas() {
+  async function getStatementCanvas(targetStatement = state.statement) {
     if (!window.html2canvas) throw new Error("html2canvas 라이브러리를 불러오지 못했습니다.");
-    const paper = document.getElementById("statement-paper");
+    let paper = document.getElementById("statement-paper");
+    let temp = null;
+    if (!paper || targetStatement.id !== state.statement.id) {
+      temp = document.createElement("div");
+      temp.className = "offscreen-render";
+      temp.innerHTML = renderStatementPaper(targetStatement);
+      document.body.appendChild(temp);
+      paper = temp.querySelector("#statement-paper");
+    }
     if (!paper) throw new Error("미리보기 영역을 찾지 못했습니다.");
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    return window.html2canvas(paper, {
+    const canvas = await window.html2canvas(paper, {
       backgroundColor: "#ffffff",
       scale: 3,
       useCORS: true,
       logging: false,
       windowWidth: 1000
     });
+    if (temp) temp.remove();
+    return canvas;
   }
 
-  async function downloadJpg(button) {
-    const saved = saveCurrentStatement("generated");
+  async function downloadJpg(button, targetStatement = state.statement) {
+    const saved = targetStatement === state.statement ? saveCurrentStatement("generated") : targetStatement;
     if (!saved) return;
     try {
-      button.disabled = true;
-      button.textContent = "생성 중";
-      const canvas = await getStatementCanvas();
-      const fileName = buildFileName(state.statement, "jpg");
+      if (button) {
+        button.disabled = true;
+        button.textContent = "생성 중";
+      }
+      const canvas = await getStatementCanvas(saved);
+      const fileName = buildFileName(saved, "jpg");
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
       triggerDownload(blob, fileName);
-      saveCurrentStatement("generated", { jpg_url: fileName });
+      if (targetStatement === state.statement) {
+        saveCurrentStatement("generated", { jpg_url: fileName });
+        render();
+      }
       showToast("JPG 파일을 저장했습니다.");
-      render();
     } catch (error) {
       console.error(error);
       showToast(error.message || "JPG 생성에 실패했습니다.");
     } finally {
-      button.disabled = false;
-      button.textContent = "JPG 저장";
+      if (button) {
+        button.disabled = false;
+        button.textContent = button.dataset.action === "record-jpg" ? "JPG 다시" : "JPG 저장";
+      }
     }
   }
 
-  async function downloadPdf(button) {
-    const saved = saveCurrentStatement("generated");
+  async function downloadPdf(button, targetStatement = state.statement) {
+    const saved = targetStatement === state.statement ? saveCurrentStatement("generated") : targetStatement;
     if (!saved) return;
     try {
-      button.disabled = true;
-      button.textContent = "생성 중";
-      const canvas = await getStatementCanvas();
+      if (button) {
+        button.disabled = true;
+        button.textContent = "생성 중";
+      }
+      const canvas = await getStatementCanvas(saved);
       const image = canvas.toDataURL("image/jpeg", 0.98);
       const pdf = new window.jspdf.jsPDF("p", "mm", "a4");
       pdf.addImage(image, "JPEG", 0, 0, 210, 297);
-      const fileName = buildFileName(state.statement, "pdf");
+      const fileName = buildFileName(saved, "pdf");
       pdf.save(fileName);
-      saveCurrentStatement("generated", { pdf_url: fileName });
+      if (targetStatement === state.statement) {
+        saveCurrentStatement("generated", { pdf_url: fileName });
+        render();
+      }
       showToast("PDF 파일을 저장했습니다.");
-      render();
     } catch (error) {
       console.error(error);
       showToast(error.message || "PDF 생성에 실패했습니다.");
     } finally {
-      button.disabled = false;
-      button.textContent = "PDF 저장";
+      if (button) {
+        button.disabled = false;
+        button.textContent = button.dataset.action === "record-pdf" ? "PDF 다시" : "PDF 저장";
+      }
     }
   }
 
@@ -1073,6 +1622,14 @@
     if (search) {
       search.addEventListener("input", () => {
         state.search = search.value;
+        refreshRecordResults();
+      });
+    }
+
+    const status = app.querySelector("[data-status-filter]");
+    if (status) {
+      status.addEventListener("change", () => {
+        state.statusFilter = status.value || "all";
         refreshRecordResults();
       });
     }
@@ -1108,20 +1665,20 @@
     });
   }
 
-  function handleRecordAction(action, button) {
+  async function handleRecordAction(action, button) {
     const row = button.closest("[data-statement-id]");
     const statement = store.statements.find((candidate) => candidate.id === row.dataset.statementId);
     if (!statement) return;
 
     if (action === "load-record") {
-      state.statement = { ...statement, items: statement.items.map((item) => ({ ...item })) };
+      state.statement = normalizeStatement({ ...statement, items: statement.items.map((item) => ({ ...item })) });
       state.editingStatementId = statement.id;
       setView("statement");
       return;
     }
 
     if (action === "copy-record") {
-      state.statement = {
+      state.statement = normalizeStatement({
         ...statement,
         id: uid("statement"),
         statement_no: nextStatementNo(today()),
@@ -1135,9 +1692,19 @@
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         items: statement.items.map((item) => ({ ...item, id: uid("item") }))
-      };
+      });
       state.editingStatementId = null;
       setView("statement");
+      return;
+    }
+
+    if (action === "record-pdf") {
+      await downloadPdf(button, statement);
+      return;
+    }
+
+    if (action === "record-jpg") {
+      await downloadJpg(button, statement);
       return;
     }
 
@@ -1164,23 +1731,33 @@
   }
 
   function bindManageEvents() {
-    app.querySelectorAll("[data-manage-tab]").forEach((button) => {
-      button.addEventListener("click", () => {
-        state.manageTab = button.dataset.manageTab;
-        state.editingCustomerId = null;
-        state.editingProductId = null;
-        render();
-      });
-    });
-
     app.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", () => handleManageAction(button.dataset.action, button));
     });
+
+    app.querySelectorAll("[data-money-field]").forEach((input) => {
+      input.addEventListener("blur", () => {
+        input.value = numberInput(input.value);
+      });
+    });
+
+    const sealUpload = app.querySelector("[data-seal-upload]");
+    if (sealUpload) {
+      sealUpload.addEventListener("change", handleSealUpload);
+    }
   }
 
-  function handleManageAction(action, button) {
+  async function handleManageAction(action, button) {
     if (action === "save-customer") return saveCustomer();
     if (action === "save-product") return saveProduct();
+    if (action === "save-business") return saveBusiness();
+    if (action === "remove-seal") {
+      store.businessProfile.seal_image_url = "";
+      persist();
+      showToast("도장 이미지를 삭제했습니다.");
+      render();
+      return;
+    }
     if (action === "cancel-customer-edit") {
       state.editingCustomerId = null;
       render();
@@ -1229,6 +1806,7 @@
     const form = app.querySelector(selector);
     const data = {};
     form.querySelectorAll("input, textarea, select").forEach((input) => {
+      if (input.type === "file") return;
       data[input.name] = input.value.trim();
     });
     return data;
@@ -1240,12 +1818,13 @@
       showToast("거래처명을 입력해 주세요.");
       return;
     }
+    data.default_commission_rate = parseNumber(data.default_commission_rate);
     const now = new Date().toISOString();
     if (state.editingCustomerId) {
       const customer = store.customers.find((candidate) => candidate.id === state.editingCustomerId);
       Object.assign(customer, data, { updated_at: now });
     } else {
-      store.customers.push({ id: uid("customer"), ...data, created_at: now });
+      store.customers.push(normalizeCustomer({ id: uid("customer"), ...data, created_at: now, updated_at: now }));
     }
     state.editingCustomerId = null;
     persist();
@@ -1259,18 +1838,61 @@
       showToast("품목명을 입력해 주세요.");
       return;
     }
-    data.default_price = parseNumber(data.default_price);
+    data.retail_price = parseNumber(data.retail_price);
+    data.default_commission_rate = parseNumber(data.default_commission_rate);
+    data.default_supply_price = parseNumber(data.default_supply_price);
+    data.price_mode = data.price_mode === "manual" ? "manual" : "auto";
     const now = new Date().toISOString();
+    const normalized = normalizeProduct({ ...data, updated_at: now });
     if (state.editingProductId) {
       const product = store.products.find((candidate) => candidate.id === state.editingProductId);
-      Object.assign(product, data, { updated_at: now });
+      Object.assign(product, normalized, { id: product.id, created_at: product.created_at, updated_at: now });
     } else {
-      store.products.push({ id: uid("product"), ...data, created_at: now });
+      store.products.push({ ...normalized, id: uid("product"), created_at: now, updated_at: now });
     }
     state.editingProductId = null;
     persist();
     showToast("상품을 저장했습니다.");
     render();
+  }
+
+  function saveBusiness() {
+    const data = readFormData('[data-editor="business"]');
+    if (!data.business_name || !data.representative_name) {
+      showToast("상호명과 대표자명을 입력해 주세요.");
+      return;
+    }
+    store.businessProfile = normalizeBusinessProfile({
+      ...store.businessProfile,
+      ...data,
+      updated_at: new Date().toISOString()
+    });
+    persist();
+    showToast("사업자 정보를 저장했습니다.");
+    render();
+  }
+
+  function handleSealUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      showToast("PNG 또는 JPG 이미지만 사용할 수 있습니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const currentForm = app.querySelector('[data-editor="business"]') ? readFormData('[data-editor="business"]') : {};
+      store.businessProfile = normalizeBusinessProfile({
+        ...store.businessProfile,
+        ...currentForm,
+        seal_image_url: String(reader.result)
+      });
+      persist();
+      showToast("도장 이미지를 저장했습니다.");
+      render();
+    };
+    reader.onerror = () => showToast("도장 이미지를 읽지 못했습니다.");
+    reader.readAsDataURL(file);
   }
 
   if ("serviceWorker" in navigator) {
